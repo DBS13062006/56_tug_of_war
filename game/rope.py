@@ -1,3 +1,4 @@
+import math
 import pygame
 
 
@@ -29,13 +30,24 @@ class Rope:
         self.marker_x = float(self.screen_width // 2)
         self.velocity = 0.0
 
-    def render(self, surface):
-        pygame.draw.line(
-            surface,
-            (180, 140, 90),
-            (60, self.center_y),
-            (self.screen_width - 60, self.center_y),
-            10
+    def rope_points(self, tension, time_ms, segments=40):
+        """Rope polyline: sags when slack, vibrates when under high tension."""
+        x0, x1 = 60, self.screen_width - 60
+        sag = (1.0 - tension) * 14
+        amp = max(0.0, tension - 0.45) * 7
+        t = time_ms / 1000.0
+        pts = []
+        for i in range(segments + 1):
+            u = i / segments
+            x = x0 + (x1 - x0) * u
+            y = self.center_y + sag * 4 * u * (1 - u)
+            y += amp * math.sin(u * 18 + t * 55) * math.sin(u * math.pi)
+            pts.append((x, y))
+        return pts
+
+    def render(self, surface, tension=0.5, time_ms=0):
+        pygame.draw.lines(
+            surface, (180, 140, 90), False, self.rope_points(tension, time_ms), 10
         )
 
         pygame.draw.line(

@@ -10,11 +10,14 @@ class GameEngine:
         self.height = height
         self.rope = Rope(width, height)
         self.player = Puller(90, height // 2, (50, 120, 220), "PLAYER (A/D)")
-        self.computer = Puller(width - 90, height // 2, (220, 80, 50), "COMPUTER")
+        self.computer = Puller(width - 90, height // 2, (220, 80, 50), "COMPUTER", back_dir=1)
 
         self.last_key = None
         self.winner = None
         self.game_state = "PLAYING"
+
+        # Pulling momentum in [-1, 1]: negative = player winning the struggle
+        self.momentum = 0.0
 
         self.base_pull_cooldown = 180
         self.panic_pull_cooldown = 85
@@ -37,6 +40,7 @@ class GameEngine:
         if event.type == pygame.KEYDOWN and event.key in (pygame.K_a, pygame.K_d):
             if event.key != self.last_key:
                 self.rope.pull_left(1.0)
+                self.momentum = max(-1.0, self.momentum - 0.3)
                 self.last_key = event.key
 
     def update(self):
@@ -51,7 +55,10 @@ class GameEngine:
             else:
                 computer_variance = random.uniform(0.7, 1.2)
             self.rope.pull_right(computer_variance)
+            self.momentum = min(1.0, self.momentum + 0.3 * computer_variance)
             self.last_computer_pull = now
+
+        self.momentum *= 0.95
 
         result = self.rope.check_winner()
         if result:
@@ -76,6 +83,13 @@ class GameEngine:
         self.last_computer_pull = pygame.time.get_ticks()
         self.panic_active = False
         self.computer_pull_cooldown = self.base_pull_cooldown
+        self.momentum = 0.0
+
+    def tension(self):
+        """0 = slack rope, 1 = maximum strain (struggle intensity)."""
+        offset = abs(self.rope.marker_x - self.width // 2)
+        reach = self.width // 2 - self.rope.left_win_x
+        return min(1.0, 0.6 * min(1.0, offset / reach) + 0.7 * abs(self.momentum))
 
     def render(self, screen):
         screen.fill((30, 32, 36))
@@ -83,9 +97,9 @@ class GameEngine:
         mud_rect = pygame.Rect(self.width // 2 - 120, self.height // 2 - 80, 240, 160)
         pygame.draw.rect(screen, (45, 38, 30), mud_rect, border_radius=12)
 
-        self.rope.render(screen)
-        self.player.render(screen)
-        self.computer.render(screen)
+        self.rope.render(screen, self.tension(), pygame.time.get_ticks())
+        self.player.render(screen, lean=max(0.0, -self.momentum))
+        self.computer.render(screen, lean=max(0.0, self.momentum))
 
         inst_surf = self.font_small.render(
             "Alternate [A] and [D] keys rapidly to pull!", True, (210, 210, 210)
