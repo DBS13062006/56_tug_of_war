@@ -19,6 +19,11 @@ class GameEngine:
         # Pulling momentum in [-1, 1]: negative = player winning the struggle
         self.momentum = 0.0
 
+        self.sudden_death_ms = 45_000
+        self.sudden_death = False
+        self.match_start = pygame.time.get_ticks()
+        self.elapsed_ms = 0
+
         self.base_pull_cooldown = 180
         self.panic_pull_cooldown = 85
         self.computer_pull_cooldown = self.base_pull_cooldown
@@ -39,7 +44,7 @@ class GameEngine:
         # before A is released) can never freeze input.
         if event.type == pygame.KEYDOWN and event.key in (pygame.K_a, pygame.K_d):
             if event.key != self.last_key:
-                self.rope.pull_left(1.0)
+                self.rope.pull_left(1.0 * self.power_multiplier())
                 self.momentum = max(-1.0, self.momentum - 0.3)
                 self.last_key = event.key
 
@@ -48,13 +53,15 @@ class GameEngine:
             return
 
         now = pygame.time.get_ticks()
+        self.elapsed_ms = now - self.match_start
+        self.sudden_death = self.elapsed_ms >= self.sudden_death_ms
         self.update_panic()
         if now - self.last_computer_pull >= self.computer_pull_cooldown:
             if self.panic_active:
                 computer_variance = random.uniform(1.4, 2.0)
             else:
                 computer_variance = random.uniform(0.7, 1.2)
-            self.rope.pull_right(computer_variance)
+            self.rope.pull_right(computer_variance * self.power_multiplier())
             self.momentum = min(1.0, self.momentum + 0.3 * computer_variance)
             self.last_computer_pull = now
 
@@ -64,6 +71,10 @@ class GameEngine:
         if result:
             self.winner = result
             self.game_state = "GAME_OVER"
+
+    def power_multiplier(self):
+        """Sudden death doubles pulling power for every action."""
+        return 2.0 if self.sudden_death else 1.0
 
     def update_panic(self):
         """Panic surge: once the marker is pulled past the midpoint between
@@ -84,6 +95,9 @@ class GameEngine:
         self.panic_active = False
         self.computer_pull_cooldown = self.base_pull_cooldown
         self.momentum = 0.0
+        self.match_start = pygame.time.get_ticks()
+        self.elapsed_ms = 0
+        self.sudden_death = False
 
     def tension(self):
         """0 = slack rope, 1 = maximum strain (struggle intensity)."""
@@ -101,10 +115,17 @@ class GameEngine:
         self.player.render(screen, lean=max(0.0, -self.momentum))
         self.computer.render(screen, lean=max(0.0, self.momentum))
 
+        secs = self.elapsed_ms // 1000
+        timer_surf = self.font_big.render(f"{secs // 60:02d}:{secs % 60:02d}", True, (240, 240, 240))
+        screen.blit(timer_surf, (self.width // 2 - timer_surf.get_width() // 2, 4))
+        if self.sudden_death:
+            sd_surf = self.font_small.render("SUDDEN DEATH - DOUBLE POWER!", True, (255, 60, 60))
+            screen.blit(sd_surf, (self.width // 2 - sd_surf.get_width() // 2, 68))
+
         inst_surf = self.font_small.render(
             "Alternate [A] and [D] keys rapidly to pull!", True, (210, 210, 210)
         )
-        screen.blit(inst_surf, (self.width // 2 - inst_surf.get_width() // 2, 40))
+        screen.blit(inst_surf, (self.width // 2 - inst_surf.get_width() // 2, 44))
 
         if self.panic_active and self.game_state == "PLAYING":
             panic_surf = self.font_small.render(
