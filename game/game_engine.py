@@ -16,7 +16,10 @@ class GameEngine:
         self.winner = None
         self.game_state = "PLAYING"
 
-        self.computer_pull_cooldown = 180
+        self.base_pull_cooldown = 180
+        self.panic_pull_cooldown = 85
+        self.computer_pull_cooldown = self.base_pull_cooldown
+        self.panic_active = False
         self.last_computer_pull = pygame.time.get_ticks()
 
         self.font_big = pygame.font.SysFont(None, 48)
@@ -41,8 +44,12 @@ class GameEngine:
             return
 
         now = pygame.time.get_ticks()
+        self.update_panic()
         if now - self.last_computer_pull >= self.computer_pull_cooldown:
-            computer_variance = random.uniform(0.7, 1.2)
+            if self.panic_active:
+                computer_variance = random.uniform(1.4, 2.0)
+            else:
+                computer_variance = random.uniform(0.7, 1.2)
             self.rope.pull_right(computer_variance)
             self.last_computer_pull = now
 
@@ -51,12 +58,24 @@ class GameEngine:
             self.winner = result
             self.game_state = "GAME_OVER"
 
+    def update_panic(self):
+        """Panic surge: once the marker is pulled past the midpoint between
+        center and the player's goal, the computer pulls faster and harder."""
+        mid = self.width // 2
+        threshold = mid - (mid - self.rope.left_win_x) * 0.4
+        self.panic_active = self.rope.marker_x <= threshold
+        self.computer_pull_cooldown = (
+            self.panic_pull_cooldown if self.panic_active else self.base_pull_cooldown
+        )
+
     def reset(self):
         self.rope.reset()
         self.last_key = None
         self.winner = None
         self.game_state = "PLAYING"
         self.last_computer_pull = pygame.time.get_ticks()
+        self.panic_active = False
+        self.computer_pull_cooldown = self.base_pull_cooldown
 
     def render(self, screen):
         screen.fill((30, 32, 36))
@@ -72,6 +91,14 @@ class GameEngine:
             "Alternate [A] and [D] keys rapidly to pull!", True, (210, 210, 210)
         )
         screen.blit(inst_surf, (self.width // 2 - inst_surf.get_width() // 2, 40))
+
+        if self.panic_active and self.game_state == "PLAYING":
+            panic_surf = self.font_small.render(
+                "COMPUTER PANIC SURGE!", True, (255, 120, 60)
+            )
+            screen.blit(
+                panic_surf, (self.width - panic_surf.get_width() - 20, self.height - 40)
+            )
 
         if self.game_state == "GAME_OVER":
             overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
